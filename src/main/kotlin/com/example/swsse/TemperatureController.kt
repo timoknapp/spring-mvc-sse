@@ -1,5 +1,6 @@
 package com.example.swsse
 
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.event.EventListener
 import org.springframework.http.MediaType
 import org.springframework.scheduling.annotation.Async
@@ -13,33 +14,20 @@ import javax.servlet.http.HttpServletRequest
 
 @RestController
 class TemperatureController {
-    val clients: MutableSet<SseEmitter> = CopyOnWriteArraySet<SseEmitter>()
+
+    @Autowired
+    private lateinit var temperatureSensor: TemperatureSensor
 
     @RequestMapping(
         value = arrayOf("/temperature-stream"),
         method = arrayOf(RequestMethod.GET)
     )
     fun events(request: HttpServletRequest) : SseEmitter {
-        val emitter = SseEmitter()
-        clients.add(emitter)
+        val emitter = RxSseEmitter()
 
-        //Remove emitter from clients on error or disconnect
-        emitter.onTimeout { clients.remove(emitter) }
-        emitter.onCompletion { clients.remove(emitter) }
+        temperatureSensor.temperatureStream()
+            .subscribe(emitter.getSubscriber())
+
         return emitter
-    }
-
-    @Async
-    @EventListener
-    fun handleMessage(temperature: Temperature) {
-        val deadEmitters = mutableListOf<SseEmitter>()
-        clients.forEach { emitter ->
-            try {
-                emitter.send(temperature, MediaType.APPLICATION_JSON)
-            } catch (e: Exception) {
-                deadEmitters.add(emitter)
-            }
-        }
-        clients.removeAll(deadEmitters)
     }
 }
